@@ -47,6 +47,49 @@
       - "worker"
     become: true
 
+  - name: "Find jinja2 Templates"
+    find:
+      patterns: "*.j2"
+      paths: "{{ tempdir }}/customize_filesystem"
+      recurse: yes
+    register: customize_filesystem_template_search
+
+  - name: "Find jinja2 Templates Meant For Destination Nodes (.j2.nondeploy)"
+    find:
+      patterns: "*.j2.nondeploy"
+      paths: "{{ tempdir }}/customize_filesystem"
+      recurse: yes
+    register: customize_filesystem_static_template_search
+
+  - name: "Extract Previous Searches Into Targeted Facts"
+    set_fact:
+      customize_filesystem_template_files: "{{ customize_filesystem_template_search | json_query('files[].path') }}"
+      customize_filesystem_static_template_files: "{{ customize_filesystem_static_template_search | json_query('files[].path') }}"
+
+  - name: "Render Templates To Their Final Destinations"
+    template:
+      src: "{{ item }}"
+      dest: "{{ item | regex_replace('\\.j2$', '') }}"
+    with_items: "{{ customize_filesystem_template_files }}"
+
+  - name: "Remove customize_filesystem Deployment Templates"
+    file:
+      state: absent
+      path: "{{ item }}"
+    with_items: "{{ customize_filesystem_template_files }}"
+
+  - name: "Create Final .j2 Files From .j2.nondeploy Files"
+    copy:
+      src: "{{ item }}"
+      dest: "{{ item | regex_replace('\\.j2\\.nondeploy$', '.j2') }}"
+    with_items: "{{ customize_filesystem_static_template_files }}"
+
+  - name: "Remove Original .j2.nondeploy Files"
+    file:
+       state: absent
+       path: "{{ item }}"
+    with_items: "{{ customize_filesystem_static_template_files }}"
+
   - name: Augment Ignition Config Files
     script: |
       filetranspile-1.1.1.py -i {{ dir }}/{{ item }}.ign.orig -f {{ tempdir }}/customize_filesystem/{{ item }} -o {{ dir }}/{{ item }}.ign
